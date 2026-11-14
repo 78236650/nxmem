@@ -1,0 +1,24 @@
+# 构建产物
+/bin/
+/dist/
+/nxmem
+
+# 数据目录绝不能进仓库
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# 本地环境
+.env
+.env.*
+!.env.example
+
+# 系统/编辑器
+.DS_Store
+.idea/
+.vscode/
+
+# 测试残留
+/tmp/
+*.test

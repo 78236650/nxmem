@@ -1,0 +1,22 @@
+name: nxmem
+
+services:
+  nxmem:
+    image: ghcr.io/78236650/nxmem:0.1.0
+    build: .
+    container_name: nxmem
+    restart: unless-stopped
+    ports:
+      - "8861:8861"
+    environment:
+      NXMEM_HOME: /data
+      # 必须设置：所有写 shared 的操作都靠它鉴权
+      NXMEM_ADMIN_TOKEN: ${NXMEM_ADMIN_TOKEN:?需要设置 NXMEM_ADMIN_TOKEN}
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "/app/nxmem", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
