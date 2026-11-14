@@ -69,7 +69,12 @@ func (s *srv) auth(r *http.Request) (store.Identity, bool) {
 	if s.opt.AdminToken != "" && tok == s.opt.AdminToken {
 		return store.Admin("admin"), true
 	}
-	return s.opt.Store.Auth(tok)
+	id, ok := s.opt.Store.Auth(tok)
+	if ok && id.Has(store.CapAdmin) {
+		// 能力里含 admin 即按 admin 角色处理（与 scopes 模型一致）
+		id.Role = "admin"
+	}
+	return id, ok
 }
 
 // require 同时校验令牌与能力 scope，失败时已写好响应。
@@ -78,6 +83,9 @@ func (s *srv) require(w http.ResponseWriter, r *http.Request, cap string) (store
 	if !ok {
 		writeJSON(w, 401, map[string]any{"error": "unauthorized", "hint": "需要 X-Nxmem-Token 或 Bearer 令牌"})
 		return id, false
+	}
+	if id.Has(store.CapAdmin) {
+		id.Role = "admin"
 	}
 	if !id.Has(cap) {
 		writeJSON(w, 403, map[string]any{"error": "forbidden", "cap": cap, "scopes": id.Scopes})

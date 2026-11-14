@@ -12,6 +12,12 @@
 
 ## [0.1.1] - 2026-11-14
 
+### 修复
+- **`--scopes admin` 的令牌无法写 `shared`**：鉴权仍按旧 `role` 字段判断，
+  导致按能力模型签发的 admin 令牌被当成 writer。现在 `auth` 解析后统一归一化
+  （能力含 `admin` → 角色视为 admin），REST 与 MCP 两条路径都生效
+- 图谱项目节点改用项目编码作 id、name 单独存显示名，修复同名/重复节点与连线丢失
+
 ### 新增
 - **图谱写口**：MCP `entity_put` / `link_put`，REST `POST /api/entities`、`POST /api/links`，
   `GET /api/entities?scope=&q=`、`GET /api/links?entity=`（此前只有 `graph` 读）

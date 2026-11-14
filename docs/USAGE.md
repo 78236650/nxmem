@@ -50,20 +50,36 @@ nxmem serve --addr 127.0.0.1:8861
 
 ## 3. 发令牌
 
+令牌 = **身份 + 能力 scope**，两个维度：
+
 ```bash
-nxmem agent add mac --role writer     # 普通写权限
-nxmem agent add admin --role admin    # 可写 shared
-nxmem agent list                      # 查看谁接过
+nxmem agent add mac   --scopes mem:write,graph:write     # 只能写，不能写 shared
+nxmem agent add admin --scopes admin                     # 全权，可写 shared
+nxmem agent add ro    --scopes mem:read                  # 只读
+nxmem agent list                                         # 看谁接过、各自的能力
 ```
 
-令牌只在 `add` 那一刻显示一次。丢了就重新 `add` **同名覆盖**（旧令牌立即失效）。
+令牌只在 `add` 那一刻显示一次，库里只存 sha256。丢了就 `add` **同名覆盖**（旧令牌立即失效）。
 
-角色差异：
+**能力清单**
 
-| 角色 | 写 shared | 写项目 scope | 写 exp-自己 | 读 |
-|---|---|---|---|---|
-| `admin` | ✓ | ✓ | ✓ | ✓ |
-| `writer` | ✗ | ✓ | ✓ | ✓ |
+| 能力 | 允许 |
+|---|---|
+| `mem:read` | `mem_search` / `mem_history` |
+| `mem:write` | `mem_put`、项目/任务/过程的写入 |
+| `graph:read` | `graph`、`GET /api/entities`、`GET /api/links` |
+| `graph:write` | `entity_put` / `link_put`、`POST /api/entities|links` |
+| `map:write` | 图谱写（兼容旧口径） |
+| `admin` | 全部，含写 `shared` |
+| `<资源>:*` / `*` | 通配 |
+
+**数据 scope 另外算**（两把锁都得开）：
+
+| 数据 scope | 谁能写 |
+|---|---|
+| `shared` | 仅 `admin` 能力 |
+| `<项目码>` | 任何有写能力、且项目在可见范围内的令牌 |
+| `exp-<机器>` | 只有该机器自己 |
 
 ---
 
@@ -163,6 +179,32 @@ nxmem agent list                      # 查看谁接过
 ### `task_upsert` / `project_upsert`
 
 同名任务/同 code 项目会覆盖（`updated_at` 自动刷新），甘特图立即反映。
+
+---
+
+### `graph`
+
+```json
+{"entity": "atlas-web"}
+```
+
+不带参数返回整图；带 `entity` 只返回该实体的邻域（一跳）。也支持 `GET /api/graph`（免令牌只读）。
+
+### `entity_put`
+
+```json
+{"scope": "shared", "type": "project", "name": "atlas-web", "meta": "{\"owner\":\"team-a\"}"}
+```
+
+`type` 建议用：`project` / `person` / `client` / `system` / `tool`。写 `shared` 需要 `admin` 能力。
+
+### `link_put`
+
+```json
+{"scope": "shared", "src": "agent-a", "dst": "atlas-web", "rel": "推进", "note": "本季度"}
+```
+
+`src` / `dst` 用实体名。重复写同一对关系会覆盖 `note`，不会产生重复边。
 
 ---
 
