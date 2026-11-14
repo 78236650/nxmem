@@ -5,10 +5,22 @@
 ## [Unreleased]
 
 ### 计划中
+- `agent rm` 命令
+
+### 计划中
 - `mem_search` 可选向量后端（保留现有接口，不改调用方）
 - 记忆合并：把两条相近的合成一条并留痕
 - `agent rm` 命令
 - 看板其余只读接口（overview/memories/...）统一加令牌校验
+
+## [0.1.2] - 2026-11-14
+
+### 安全（破坏性变更）
+- **只读接口默认需要令牌**：`/api/overview|memories|projects|tasks|gantt|steps|audit|graph`
+  以及看板本身，无令牌一律 401。此前这些接口公开，任何人能访问端口即可读走全部记忆正文与审计。
+- 新增 `--public-read` 开关：确需免登录看板（内网大屏、演示）时才开，启动时会打印提示。
+- 看板首次打开会弹出令牌输入框，令牌存在 localStorage；「更换令牌」可清空。
+- 迁移提示：升级后浏览器打开看板需粘一次令牌（`nxmem agent add <name> --scopes mem:read` 生成）。
 
 ## [0.1.1] - 2026-11-14
 

@@ -130,7 +130,8 @@ nxmem agent list          # NAME / ROLE / SCOPES / LAST_SEEN
 
 **读写接口的令牌口径**
 
-- **只读公开、勿放敏感实体**：`GET /api/graph` 与看板只读接口（overview/memories/projects/tasks/gantt/steps/audit）
+- **只读默认也要令牌**：`GET /api/graph` 与看板只读接口（overview/memories/projects/tasks/gantt/steps/audit）
+  默认 401，浏览器打开看板会提示粘一次令牌；确需免登录看板用 `--public-read` 启动（内网大屏/演示
   免令牌，能访问 8861 的人都能看。图谱与记忆里不要写密码、客户名单、私网拓扑。
 - **写接口一律要令牌 + scope**：`POST /api/entities|links`、MCP `entity_put` / `link_put` / `mem_put` / 项目·任务·过程写入，
   必须带 `X-Nxmem-Token`（或 `Bearer` / `X-Api-Key`）且具备对应能力（`graph:write` / `mem:write` / `map:write`），

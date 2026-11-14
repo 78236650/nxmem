@@ -25,6 +25,8 @@ type Options struct {
 	AdminToken string
 	Store      *store.Store
 	StaticDir  string
+	// PublicRead 为 true 时只读接口免令牌（默认 false：只读也要令牌）
+	PublicRead bool
 }
 
 type srv struct {
@@ -94,6 +96,21 @@ func (s *srv) require(w http.ResponseWriter, r *http.Request, cap string) (store
 	return id, true
 }
 
+// requireRead 只读接口的守卫：默认必须带令牌；--public-read 时放行。
+func (s *srv) requireRead(w http.ResponseWriter, r *http.Request) bool {
+	if s.opt.PublicRead {
+		return true
+	}
+	if _, ok := s.auth(r); ok {
+		return true
+	}
+	writeJSON(w, 401, map[string]any{
+		"error": "unauthorized",
+		"hint":  "只读接口也需要令牌（X-Nxmem-Token）；确需免登录看板请用 --public-read 启动",
+	})
+	return false
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
@@ -130,6 +147,9 @@ func (s *srv) index(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *srv) overview(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRead(w, r) {
+		return
+	}
 	ps, err := s.opt.Store.Projects()
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
@@ -157,6 +177,9 @@ func (s *srv) overview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *srv) memories(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRead(w, r) {
+		return
+	}
 	q := r.URL.Query()
 	list, err := s.opt.Store.Search(q.Get("q"), q.Get("scope"), 200)
 	if err != nil {
@@ -167,6 +190,9 @@ func (s *srv) memories(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *srv) projects(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRead(w, r) {
+		return
+	}
 	ps, err := s.opt.Store.Projects()
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
@@ -176,6 +202,9 @@ func (s *srv) projects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *srv) tasks(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRead(w, r) {
+		return
+	}
 	ts, err := s.opt.Store.Tasks(r.URL.Query().Get("project"))
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
@@ -185,12 +214,18 @@ func (s *srv) tasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *srv) gantt(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRead(w, r) {
+		return
+	}
 	ps, _ := s.opt.Store.Projects()
 	ts, _ := s.opt.Store.Tasks("")
 	writeJSON(w, 200, map[string]any{"projects": ps, "tasks": ts})
 }
 
 func (s *srv) steps(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRead(w, r) {
+		return
+	}
 	st, err := s.opt.Store.Steps(r.URL.Query().Get("project"), 200)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
@@ -200,6 +235,9 @@ func (s *srv) steps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *srv) audit(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRead(w, r) {
+		return
+	}
 	rows, err := s.opt.Store.AuditTail(100)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
@@ -213,6 +251,9 @@ func (s *srv) audit(w http.ResponseWriter, r *http.Request) {
 // 代价是图谱对本网段公开——README 明确「只读公开、勿放敏感实体」。
 // 写接口（entity_put / link_put、POST /api/entities|links）仍必须令牌 + graph:write + scope 校验。
 func (s *srv) graph(w http.ResponseWriter, r *http.Request) {
+	if !s.requireRead(w, r) {
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		writeJSON(w, 405, map[string]any{"error": "method not allowed"})

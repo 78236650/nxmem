@@ -43,6 +43,7 @@ nxmem serve --addr 127.0.0.1:8861
 | `--dir` | `$NXMEM_HOME` 或 `~/.nxmem` | 库目录 |
 | `--admin-token` | `$NXMEM_ADMIN_TOKEN` | 管理员令牌，可写 `shared` |
 | `--static` | 自动探测 `./static` | 看板目录 |
+| `--public-read` | `false` | 只读接口免令牌；默认关闭，开启后任何人可读看板数据 |
 
 **不设 admin 令牌也能起**，但所有写 `shared` 的请求都会被拒。建议总是设。
 
@@ -215,6 +216,10 @@ nxmem agent list                                         # 看谁接过、各自
 六个页签：关系图谱 / 甘特 / 项目 / 记忆 / 过程 / 审计。
 
 **只读**，写入一律走 MCP。看板数据 15 秒自动刷新。
+
+**首次打开会要求粘贴令牌**（浏览器存 localStorage，右下角「更换令牌」可清空）。
+这是默认行为：记忆正文和审计记录不该因为"能连上端口"就可见。
+内网大屏、演示场景可以 `nxmem serve --public-read` 放开只读。
 
 记忆页签里的状态标记：
 

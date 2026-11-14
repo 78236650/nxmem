@@ -21,7 +21,7 @@ import (
 	"github.com/78236650/nxmem/internal/store"
 )
 
-const version = "0.1.1"
+const version = "0.1.2"
 
 const usage = `nxmem —— 共享记忆与项目进度（只做记忆，不做凭据）
 
@@ -92,6 +92,7 @@ func cmdServe(args []string) error {
 	dir := fs.String("dir", "", "库目录（默认 $NXMEM_HOME 或 ~/.nxmem）")
 	admin := fs.String("admin-token", os.Getenv("NXMEM_ADMIN_TOKEN"), "管理员令牌")
 	static := fs.String("static", "", "看板静态目录（默认 ./static）")
+	publicRead := fs.Bool("public-read", false, "只读接口免令牌（默认关闭；开启后任何人可读看板数据）")
 	fs.Parse(args)
 	if *dir != "" {
 		os.Setenv("NXMEM_HOME", *dir)
@@ -119,8 +120,11 @@ func cmdServe(args []string) error {
 	if *admin == "" {
 		fmt.Println("提示: 未设 --admin-token，所有写 shared 的请求都会被拒")
 	}
+	if !*publicRead {
+		fmt.Println("只读接口需要令牌（看板首次打开会提示粘贴）；如要免登录看板加 --public-read")
+	}
 	fmt.Printf("nxmem %s 监听 http://%s\n  看板: GET /\n  REST: GET /api/{overview,memories,gantt,steps,audit,graph} 只读公开 · /api/entities|links 与全部 POST 需令牌\n  MCP : POST /mcp （Header X-Nxmem-Token）\n", version, *addr)
-	h := api.New(api.Options{Addr: *addr, AdminToken: *admin, Store: s, StaticDir: staticDir})
+	h := api.New(api.Options{Addr: *addr, AdminToken: *admin, Store: s, StaticDir: staticDir, PublicRead: *publicRead})
 	srv := &http.Server{Addr: *addr, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 	return srv.ListenAndServe()
 }
