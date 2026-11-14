@@ -233,14 +233,12 @@ func (s *srv) graph(w http.ResponseWriter, r *http.Request) {
 	nodeSet := map[string]map[string]any{}
 	add := func(id, typ string) {
 		if _, ok := nodeSet[id]; !ok {
-			nodeSet[id] = map[string]any{"name": id, "type": typ}
+			nodeSet[id] = map[string]any{"id": id, "name": id, "type": typ}
 		}
 	}
 	edgeSet := map[string]bool{}
 	var edges []map[string]string
-	label := map[string]string{}
 	for _, p := range ps {
-		label[p.Code] = p.Name
 		add(p.Code, "project")
 		if p.Name != "" {
 			nodeSet[p.Code]["name"] = p.Name

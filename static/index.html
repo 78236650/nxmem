@@ -149,11 +149,11 @@ function layout(nodes, edges){
     byType[t].forEach((n,i)=>{
       const k = byType[t].length;
       const a2 = (i/Math.max(k,1))*Math.PI*2;
-      const r2 = k===1 ? 0 : 58 + 30*Math.ceil(i/6);
+      const r2 = k===1 ? 0 : 120 + 42*Math.floor(i/5);
       n.x = gx + Math.cos(a2)*r2; n.y = gy + Math.sin(a2)*r2;
     });
   });
-  const idx = {}; nodes.forEach(n=>idx[n.name]=n);
+  const idx = {}; nodes.forEach(n=>idx[n.id||n.name]=n);
   // 轻量力导向：斥力 + 边吸引 + 向心
   for(let it=0; it<220; it++){
     nodes.forEach(a=>{ nodes.forEach(b=>{ if(a===b) return;
@@ -174,14 +174,16 @@ function renderGraph(){
   const {nodes, edges} = GRAPH;
   if(!nodes.length){ svg.innerHTML = '<text x="600" y="360" fill="#7d8fa1" text-anchor="middle">暂无数据</text>'; return; }
   layout(nodes, edges);
-  const idx={}; nodes.forEach(n=>idx[n.name]=n);
+  const idx={}; nodes.forEach(n=>idx[n.id||n.name]=n);
   const parts=[];
   // 边
   edges.forEach((e,i)=>{
     const a=idx[e.src], b=idx[e.dst]; if(!a||!b) return;
     parts.push(`<line data-edge="${i}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"
       stroke="#33506a" stroke-width="1.6"/>`);
-    const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1;
+    const off=(i%2?1:-1)*11;
+    const mx=(a.x+b.x)/2 + (-dy/len)*off, my=(a.y+b.y)/2 + (dx/len)*off;
     if(e.rel) parts.push(`<text x="${mx}" y="${my-5}" fill="#8fb0c9" font-size="12" text-anchor="middle"
         stroke="#0b0f14" stroke-width="3" paint-order="stroke">${e.rel}</text>`);
   });
@@ -191,10 +193,10 @@ function renderGraph(){
     const r = n.type==="company"?30 : n.type==="project"?23 : 17;
     let meta={}; try{ meta=JSON.parse(n.meta||"{}"); }catch(_){}
     const sub = meta.ip || (n.type==="person"&&meta.role) || "";
-    parts.push(`<g class="node" data-name="${n.name}" style="cursor:pointer">
+    parts.push(`<g class="node" data-name="${n.id||n.name}" style="cursor:pointer">
       <circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${c}22" stroke="${c}" stroke-width="1.8"/>
       <circle cx="${n.x}" cy="${n.y}" r="3" fill="${c}"/>
-      <text x="${n.x}" y="${n.y+r+16}" fill="#e8f1f8" font-size="14" font-weight="600" text-anchor="middle"
+      <text x="${n.x}" y="${n.y+r+16}" fill="#eef6ff" font-size="15" font-weight="600" text-anchor="middle"
         stroke="#0b0f14" stroke-width="3" paint-order="stroke">${n.name}</text>
       ${sub?`<text x="${n.x}" y="${n.y+r+31}" fill="#7d97ab" font-size="11" text-anchor="middle"
           stroke="#0b0f14" stroke-width="2.5" paint-order="stroke">${sub}</text>`:""}
