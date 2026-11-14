@@ -153,7 +153,7 @@ function layout(nodes, edges){
       n.x = gx + Math.cos(a2)*r2; n.y = gy + Math.sin(a2)*r2;
     });
   });
-  const idx = {}; nodes.forEach(n=>idx[n.id||n.name]=n);
+  const idx={}; nodes.forEach(n=>{ idx[n.id]=n; idx[n.id!=null?String(n.id):n.name]=n; idx[n.name]=n; });
   // 轻量力导向：斥力 + 边吸引 + 向心
   for(let it=0; it<220; it++){
     nodes.forEach(a=>{ nodes.forEach(b=>{ if(a===b) return;
@@ -174,7 +174,7 @@ function renderGraph(){
   const {nodes, edges} = GRAPH;
   if(!nodes.length){ svg.innerHTML = '<text x="600" y="360" fill="#7d8fa1" text-anchor="middle">暂无数据</text>'; return; }
   layout(nodes, edges);
-  const idx={}; nodes.forEach(n=>idx[n.id||n.name]=n);
+  const idx={}; nodes.forEach(n=>{ idx[n.id]=n; idx[n.id!=null?String(n.id):n.name]=n; idx[n.name]=n; });
   const parts=[];
   // 边
   edges.forEach((e,i)=>{
