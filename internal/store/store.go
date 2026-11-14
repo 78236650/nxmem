@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS audit(
   ok INTEGER, detail TEXT);
 CREATE INDEX IF NOT EXISTS idx_mem_scope ON memories(scope);
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit(ts);
+CREATE TABLE IF NOT EXISTS entities(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, name TEXT UNIQUE, meta TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS links(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, src_id INTEGER, dst_id INTEGER, rel TEXT, note TEXT);
 `
 
 // Store 是打开的库。

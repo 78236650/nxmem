@@ -1,6 +1,7 @@
 // nxmem —— 多 agent 共享记忆与项目进度的最小服务。
 //
 // 常用：
+//
 //	nxmem serve --addr 0.0.0.0:8861          # 起服务（看板 + REST + MCP）
 //	nxmem agent add mac --role writer        # 给一台机器发令牌
 //	nxmem import ~/export.json               # 从旧版导出导入
@@ -29,6 +30,8 @@ const usage = `nxmem —— 共享记忆与项目进度（只做记忆，不做�
   nxmem agent add <name> [--role writer|admin]            发令牌（admin 可写 shared）
   nxmem agent list                                        列出 agent
   nxmem import <export.json>                              导入旧版导出
+  nxmem import-graph <old.db>                             导入旧版图谱（entities/links）
+  nxmem backup <dst.db>                                   一致性快照备份（VACUUM INTO）
   nxmem memories [--scope S] [--q 关键词]                  命令行查看记忆
   nxmem demo                                              写入一套示例数据
   nxmem version
@@ -51,6 +54,10 @@ func main() {
 		err = cmdAgent(os.Args[2:])
 	case "import":
 		err = cmdImport(os.Args[2:])
+	case "import-graph":
+		err = cmdImportGraph(os.Args[2:])
+	case "backup":
+		err = cmdBackup(os.Args[2:])
 	case "memories":
 		err = cmdMemories(os.Args[2:])
 	case "demo":
@@ -129,19 +136,38 @@ func cmdAgent(args []string) error {
 	defer s.Close()
 	switch args[0] {
 	case "add":
-		fs := flag.NewFlagSet("agent add", flag.ExitOnError)
-		role := fs.String("role", "writer", "writer|admin")
-		fs.Parse(args[1:])
-		if fs.NArg() < 1 {
+		// 注意：flag.Parse 遇到第一个非 flag 参数就停止，所以参数要自己拆。
+		name, role := "", "writer"
+		rest := args[1:]
+		for i := 0; i < len(rest); i++ {
+			a := rest[i]
+			if a == "--role" || a == "-role" {
+				if i+1 < len(rest) {
+					role = rest[i+1]
+					i++
+				}
+				continue
+			}
+			if strings.HasPrefix(a, "--role=") || strings.HasPrefix(a, "-role=") {
+				role = a[strings.Index(a, "=")+1:]
+				continue
+			}
+			if !strings.HasPrefix(a, "-") && name == "" {
+				name = a
+			}
+		}
+		if name == "" {
 			return fmt.Errorf("用法: nxmem agent add <name> [--role writer|admin]")
 		}
-		name := fs.Arg(0)
+		if role != "admin" {
+			role = "writer"
+		}
 		tok := store.RandomToken(24)
-		if err := s.EnsureAgent(name, tok, *role); err != nil {
+		if err := s.EnsureAgent(name, tok, role); err != nil {
 			return err
 		}
-		s.Audit("cli", "agent_add", name, true, *role)
-		fmt.Printf("agent=%s role=%s token=%s\n（令牌只显示这一次，丢了就重新 add 覆盖）\n", name, *role, tok)
+		s.Audit("cli", "agent_add", name, true, role)
+		fmt.Printf("agent=%s role=%s token=%s\n（令牌只显示这一次，丢了就重新 add 覆盖）\n", name, role, tok)
 		return nil
 	case "list":
 		rows, err := s.Agents()
@@ -172,6 +198,36 @@ func cmdImport(args []string) error {
 	}
 	b, _ := json.Marshal(n)
 	fmt.Printf("导入完成: %s\n", string(b))
+	return nil
+}
+
+func cmdBackup(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("用法: nxmem backup <dst.db>")
+	}
+	s, err := open()
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	return s.BackupTo(args[0])
+}
+
+func cmdImportGraph(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("用法: nxmem import-graph <旧版 nxmem.db>")
+	}
+	s, err := open()
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	n, err := s.ImportGraphDB(args[0])
+	if err != nil {
+		return err
+	}
+	e, l := s.GraphCounts()
+	fmt.Printf("图谱导入完成: 新增 entities=%d links=%d；现库 entities=%d links=%d\n", n["entities"], n["links"], e, l)
 	return nil
 }
 

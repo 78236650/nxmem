@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -123,10 +124,10 @@ func (s *srv) overview(w http.ResponseWriter, r *http.Request) {
 	}
 	c := s.opt.Store.Counts()
 	writeJSON(w, 200, map[string]any{
-		"ts":      time.Now().In(cstZone).Format("2006-01-02 15:04:05"),
-		"counts":  map[string]int{"projects": c["projects"], "tasks": c["tasks"], "memories": c["memories"], "steps": c["steps"], "agents": c["agents"]},
-		"alerts":  map[string]int{"conflict": conflict, "stale": stale},
-		"projects": ps,
+		"ts":           time.Now().In(cstZone).Format("2006-01-02 15:04:05"),
+		"counts":       map[string]int{"projects": c["projects"], "tasks": c["tasks"], "memories": c["memories"], "steps": c["steps"], "agents": c["agents"]},
+		"alerts":       map[string]int{"conflict": conflict, "stale": stale},
+		"projects":     ps,
 		"recent_steps": steps,
 	})
 }
@@ -183,8 +184,26 @@ func (s *srv) audit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, rows)
 }
 
-// graph 由项目、agent、记忆 scope 派生（不引入额外实体表）。
+// graph 返回关系图谱：优先用 entities/links（可过滤实体邻域），空库时退回项目/agent 派生图。
 func (s *srv) graph(w http.ResponseWriter, r *http.Request) {
+	center := r.URL.Query().Get("entity")
+	depth := 0
+	if d, err := strconv.Atoi(r.URL.Query().Get("depth")); err == nil {
+		depth = d
+	}
+	ents, lnks, _ := s.opt.Store.Graph(center, depth)
+	if len(ents) > 0 {
+		nodes := make([]map[string]any, 0, len(ents))
+		for _, e := range ents {
+			nodes = append(nodes, map[string]any{"id": e.ID, "name": e.Name, "type": e.Type, "meta": e.Meta})
+		}
+		edges := make([]map[string]any, 0, len(lnks))
+		for _, l := range lnks {
+			edges = append(edges, map[string]any{"src": l.Src, "dst": l.Dst, "rel": l.Rel, "note": l.Note})
+		}
+		writeJSON(w, 200, map[string]any{"nodes": nodes, "edges": edges, "source": "entities"})
+		return
+	}
 	ps, _ := s.opt.Store.Projects()
 	steps, _ := s.opt.Store.Steps("", 500)
 	nodeSet := map[string]map[string]any{}
@@ -262,6 +281,9 @@ var tools = []map[string]any{
 	{"name": "step_list", "description": "列出过程记录。",
 		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{
 			"project": map[string]any{"type": "string"}, "limit": map[string]any{"type": "integer"}}}},
+	{"name": "graph", "description": "取知识图谱（实体+关系），可按实体名过滤邻域。",
+		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{
+			"entity": map[string]any{"type": "string"}, "depth": map[string]any{"type": "integer"}}}},
 	{"name": "whoami", "description": "当前 agent 与角色。",
 		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}},
 }
@@ -323,6 +345,18 @@ func (s *srv) mcp(w http.ResponseWriter, r *http.Request) {
 
 func (s *srv) callTool(agent, role, name string, args json.RawMessage) map[string]any {
 	switch name {
+	case "graph":
+		var a struct {
+			Entity string `json:"entity"`
+			Depth  int    `json:"depth"`
+		}
+		_ = json.Unmarshal(args, &a)
+		nodes, edges, err := s.opt.Store.Graph(a.Entity, a.Depth)
+		if err != nil {
+			return errResult(err.Error())
+		}
+		return textResult(map[string]any{"nodes": nodes, "edges": edges})
+
 	case "whoami":
 		return textResult(map[string]any{"agent": agent, "role": role})
 
@@ -341,12 +375,12 @@ func (s *srv) callTool(agent, role, name string, args json.RawMessage) map[strin
 
 	case "mem_put":
 		var a struct {
-			Scope   string `json:"scope"`
-			Key     string `json:"key"`
-			Content string `json:"content"`
-			Tags    string `json:"tags"`
-			Force   bool   `json:"force"`
-			TTLDays int    `json:"ttl_days"`
+			Scope    string `json:"scope"`
+			Key      string `json:"key"`
+			Content  string `json:"content"`
+			Tags     string `json:"tags"`
+			Force    bool   `json:"force"`
+			TTLDays  int    `json:"ttl_days"`
 			ValidFor string `json:"valid_for"`
 		}
 		if err := json.Unmarshal(args, &a); err != nil {
