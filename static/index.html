@@ -104,7 +104,8 @@
   <section id="steps"><div class="card"><h2>过程记录</h2><table id="tSteps"></table></div></section>
   <section id="audit"><div class="card"><h2>最近 100 条访问审计</h2><table id="tAudit"></table></div></section>
 </main>
-<footer>只读界面：所有写入通过 MCP 由 agent 完成 · 单二进制 + SQLite</footer>
+<footer>只读界面：所有写入通过 MCP 由 agent 完成 · 单二进制 + SQLite ·
+  <a href="#" onclick="localStorage.removeItem('nxmem_token');location.reload();return false;">更换令牌</a></footer>
 <div class="tooltip" id="tip"></div>
 
 <script>
@@ -114,7 +115,18 @@ const TYPE_CN = {company:"公司",person:"人",project:"项目",client:"客户",
 const $ = s => document.querySelector(s);
 const tip = $("#tip");
 
-async function api(p){ const r = await fetch(p,{cache:"no-store"}); return r.json(); }
+// 读接口也校验令牌：图谱/记忆里有客户名、内网 IP 与人员身份。
+function nxToken(){ return localStorage.getItem("nxmem_token") || ""; }
+function askToken(){
+  const t = prompt("该接口需要 nxmem 令牌（Header: X-Nxmem-Token）。\n令牌由管理员执行 nxmem agent add 生成，只显示一次。");
+  if (t && t.trim()) { localStorage.setItem("nxmem_token", t.trim()); location.reload(); }
+}
+async function api(p){
+  const tok = nxToken();
+  const r = await fetch(p,{cache:"no-store", headers: tok ? {"X-Nxmem-Token": tok} : {}});
+  if (r.status === 401 || r.status === 403) { if (!tok) askToken(); return {error: r.status === 403 ? "forbidden" : "unauthorized"}; }
+  return r.json();
+}
 
 function showTip(e, html){
   tip.innerHTML = html; tip.style.opacity = 1;
@@ -168,9 +180,10 @@ function renderGraph(){
   edges.forEach((e,i)=>{
     const a=idx[e.src], b=idx[e.dst]; if(!a||!b) return;
     parts.push(`<line data-edge="${i}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"
-      stroke="#1e2a36" stroke-width="1.4"/>`);
+      stroke="#33506a" stroke-width="1.6"/>`);
     const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
-    if(e.rel) parts.push(`<text x="${mx}" y="${my-4}" fill="#4d6172" font-size="10" text-anchor="middle">${e.rel}</text>`);
+    if(e.rel) parts.push(`<text x="${mx}" y="${my-5}" fill="#8fb0c9" font-size="12" text-anchor="middle"
+        stroke="#0b0f14" stroke-width="3" paint-order="stroke">${e.rel}</text>`);
   });
   // 节点
   nodes.forEach(n=>{
@@ -228,7 +241,7 @@ function renderGantt(data){
   if(!all.length){ svg.innerHTML='<text x="600" y="300" fill="#7d8fa1" text-anchor="middle">暂无任务</text>'; return; }
   const min = new Date(Math.min(...all.map(r=>r.s))); min.setDate(1);
   const max = new Date(Math.max(...all.map(r=>r.e))); max.setDate(1); max.setMonth(max.getMonth()+1);
-  const W=1200, L=380, R=40, top=54, rowH=26;
+  const W=1200, L=380, R=40, top=54, rowH=32;
   const days = (max-min)/86400000;
   const x = d => L + ((d-min)/86400000)/days*(W-L-R);
   const H = top + all.length*rowH + 40;
@@ -261,7 +274,7 @@ function renderGantt(data){
       const x1 = x(r.s), x2 = Math.max(x(r.e), x1+4);
       const label = (j===0 && r.kind==="task") ? code : "";
       if(label) p.push(`<text x="8" y="${y+rowH/2+4}" fill="#6b8299" font-size="12">${label}</text>`);
-      p.push(`<text x="${L-14}" y="${y+rowH/2+4}" fill="${r.kind==="project"?"#e8f1f8":"#9fb0c0"}"
+      p.push(`<text x="${r.kind==="project"?L-14:L-30}" y="${y+rowH/2+4}" fill="${r.kind==="project"?"#e8f1f8":"#9fb0c0"}"
         font-size="${r.kind==="project"?16:15}" font-weight="${r.kind==="project"?600:400}" text-anchor="end"
         stroke="#0b0f14" stroke-width="3" paint-order="stroke">${r.name.length>16?r.name.slice(0,15)+"…":r.name}</text>`);
       p.push(`<rect x="${x1}" y="${y+5}" width="${x2-x1}" height="14" rx="4" fill="${c}22" stroke="${c}55"/>`);
@@ -340,7 +353,9 @@ async function load(){
   + (ov.alerts && ov.alerts.stale ? `<div style="border-color:#4d3d12;color:#f0b429"><b style="color:#f0b429">${ov.alerts.stale}</b>待复核</div>` : "");
   renderProjects(ov.projects);
 
-  GRAPH = await api("/api/graph"); renderGraph();
+  GRAPH = await api("/api/graph");
+  if (GRAPH.error) { const s=$("#graphSvg"); if (s) s.innerHTML = '<text x="600" y="340" text-anchor="middle" fill="#f0b429" font-size="16">图谱需要令牌：点右下角「更换令牌」输入</text>'; return; }
+  renderGraph();
   renderGantt(await api("/api/gantt"));
   renderMemories(await api("/api/memories"));
   renderSteps(await api("/api/steps"));

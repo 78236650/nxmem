@@ -15,16 +15,18 @@ type Entity struct {
 	Type      string `json:"type"`
 	Name      string `json:"name"`
 	Meta      string `json:"meta,omitempty"`
+	Scope     string `json:"scope,omitempty"`
 	CreatedAt string `json:"created_at,omitempty"`
 }
 
 // Link 是一条关系（已展开成实体名）。
 type Link struct {
-	ID   int64  `json:"id"`
-	Src  string `json:"src"`
-	Dst  string `json:"dst"`
-	Rel  string `json:"rel"`
-	Note string `json:"note,omitempty"`
+	ID    int64  `json:"id"`
+	Src   string `json:"src"`
+	Dst   string `json:"dst"`
+	Rel   string `json:"rel"`
+	Note  string `json:"note,omitempty"`
+	Scope string `json:"scope,omitempty"`
 }
 
 // UpsertEntity 新增或更新一个实体，返回 id。
@@ -68,20 +70,20 @@ func (s *Store) AddLink(src, dst, rel, note string) error {
 // Graph 取图谱；center 非空时取 radius 跳以内邻域。
 func (s *Store) Graph(center string, depth int) ([]Entity, []Link, error) {
 	all := []Entity{}
-	rows, err := s.db.Query(`SELECT id,COALESCE(type,''),COALESCE(name,''),COALESCE(meta,''),COALESCE(created_at,'') FROM entities ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id,COALESCE(type,''),COALESCE(name,''),COALESCE(meta,''),COALESCE(scope,'shared'),COALESCE(created_at,'') FROM entities ORDER BY id`)
 	if err != nil {
 		return nil, nil, err
 	}
 	for rows.Next() {
 		var e Entity
-		if err := rows.Scan(&e.ID, &e.Type, &e.Name, &e.Meta, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Type, &e.Name, &e.Meta, &e.Scope, &e.CreatedAt); err != nil {
 			continue
 		}
 		all = append(all, e)
 	}
 	rows.Close()
 
-	lrows, err := s.db.Query(`SELECT l.id,COALESCE(a.name,''),COALESCE(b.name,''),COALESCE(l.rel,''),COALESCE(l.note,'')
+	lrows, err := s.db.Query(`SELECT l.id,COALESCE(a.name,''),COALESCE(b.name,''),COALESCE(l.rel,''),COALESCE(l.note,''),COALESCE(l.scope,'shared')
 		FROM links l JOIN entities a ON a.id=l.src_id JOIN entities b ON b.id=l.dst_id ORDER BY l.id`)
 	if err != nil {
 		return all, []Link{}, nil
@@ -89,7 +91,7 @@ func (s *Store) Graph(center string, depth int) ([]Entity, []Link, error) {
 	allLinks := []Link{}
 	for lrows.Next() {
 		var l Link
-		if err := lrows.Scan(&l.ID, &l.Src, &l.Dst, &l.Rel, &l.Note); err != nil {
+		if err := lrows.Scan(&l.ID, &l.Src, &l.Dst, &l.Rel, &l.Note, &l.Scope); err != nil {
 			continue
 		}
 		allLinks = append(allLinks, l)

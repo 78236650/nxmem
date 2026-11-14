@@ -50,16 +50,18 @@ CREATE TABLE IF NOT EXISTS steps(
   status TEXT, detail TEXT, agent TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS agents(
   id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, token_hash TEXT, role TEXT,
-  created_at TEXT, last_seen TEXT);
+  scopes TEXT DEFAULT '', created_at TEXT, last_seen TEXT);
 CREATE TABLE IF NOT EXISTS audit(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, agent TEXT, action TEXT, target TEXT,
   ok INTEGER, detail TEXT);
 CREATE INDEX IF NOT EXISTS idx_mem_scope ON memories(scope);
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit(ts);
 CREATE TABLE IF NOT EXISTS entities(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, name TEXT UNIQUE, meta TEXT, created_at TEXT);
+  id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, name TEXT UNIQUE, meta TEXT,
+  scope TEXT DEFAULT 'shared', created_at TEXT);
 CREATE TABLE IF NOT EXISTS links(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, src_id INTEGER, dst_id INTEGER, rel TEXT, note TEXT);
+  id INTEGER PRIMARY KEY AUTOINCREMENT, src_id INTEGER, dst_id INTEGER, rel TEXT, note TEXT,
+  scope TEXT DEFAULT 'shared');
 `
 
 // Store 是打开的库。
@@ -162,6 +164,14 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// 老库补列：SQLite 的 ADD COLUMN 不支持 IF NOT EXISTS，重复执行报错即已存在。
+	for _, c := range [][3]string{
+		{"agents", "scopes", "TEXT DEFAULT ''"},
+		{"entities", "scope", "TEXT DEFAULT 'shared'"},
+		{"links", "scope", "TEXT DEFAULT 'shared'"},
+	} {
+		_, _ = db.Exec("ALTER TABLE " + c[0] + " ADD COLUMN " + c[1] + " " + c[2])
+	}
 	return &Store{db: db, Dir: dir}, nil
 }
 
@@ -175,35 +185,45 @@ func HashToken(t string) string {
 }
 
 // EnsureAgent 确保某个 agent 存在（role: admin 表示主 agent，可写 shared）。
-func (s *Store) EnsureAgent(name, token, role string) error {
-	_, err := s.db.Exec(`INSERT INTO agents(name,token_hash,role,created_at) VALUES(?,?,?,?)
-ON CONFLICT(name) DO UPDATE SET token_hash=excluded.token_hash, role=excluded.role`,
-		name, HashToken(token), role, now())
+// scopes 省略时按 role 派生默认能力，旧调用方式继续可用。
+func (s *Store) EnsureAgent(name, token, role string, scopes ...string) error {
+	sp := scopes
+	if len(sp) == 0 {
+		sp = DefaultScopes(role)
+	}
+	_, err := s.db.Exec(`INSERT INTO agents(name,token_hash,role,scopes,created_at) VALUES(?,?,?,?,?)
+ON CONFLICT(name) DO UPDATE SET token_hash=excluded.token_hash, role=excluded.role, scopes=excluded.scopes`,
+		name, HashToken(token), role, JoinScopes(sp), now())
 	return err
 }
 
-// Auth 用令牌换 (agent, role)。
-func (s *Store) Auth(token string) (string, string, bool) {
-	var name, role string
-	err := s.db.QueryRow(`SELECT name,role FROM agents WHERE token_hash=?`, HashToken(token)).Scan(&name, &role)
+// Auth 用令牌换身份（name + role + scopes）。
+func (s *Store) Auth(token string) (Identity, bool) {
+	var name, role, scopes string
+	err := s.db.QueryRow(`SELECT name,role,COALESCE(scopes,'') FROM agents WHERE token_hash=?`,
+		HashToken(token)).Scan(&name, &role, &scopes)
 	if err != nil {
-		return "", "", false
+		return Identity{}, false
 	}
 	_, _ = s.db.Exec(`UPDATE agents SET last_seen=? WHERE name=?`, now(), name)
-	return name, role, true
+	sp := ParseScopes(scopes)
+	if len(sp) == 0 {
+		sp = DefaultScopes(role)
+	}
+	return Identity{Name: name, Role: role, Scopes: sp}, true
 }
 
 // Agents 列出已授权的 agent（不含令牌哈希）。
-func (s *Store) Agents() ([][3]string, error) {
-	rows, err := s.db.Query(`SELECT name,role,COALESCE(last_seen,'-') FROM agents ORDER BY name`)
+func (s *Store) Agents() ([][4]string, error) {
+	rows, err := s.db.Query(`SELECT name,role,COALESCE(scopes,''),COALESCE(last_seen,'-') FROM agents ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := [][3]string{}
+	out := [][4]string{}
 	for rows.Next() {
-		var a [3]string
-		if err := rows.Scan(&a[0], &a[1], &a[2]); err != nil {
+		var a [4]string
+		if err := rows.Scan(&a[0], &a[1], &a[2], &a[3]); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -255,21 +275,16 @@ func (s *Store) Put(agent, role, scope, key, content, tags, source string, force
 		res.Error = "key 与 content 必填"
 		return res
 	}
-	if scope == "" {
-		scope, res.Scope = "shared", "shared"
-	}
-	if scope == "shared" && role != "admin" {
-		res.Error = "shared 只允许主 agent 写；请写 exp-" + agent + " 或项目 scope"
+	norm, err := CheckScope(Identity{Name: agent, Role: role, Scopes: DefaultScopes(role)}, scope)
+	if err != nil {
+		res.Error = err.Error()
 		return res
 	}
-	if strings.HasPrefix(scope, "exp-") && scope != "exp-"+agent && role != "admin" {
-		res.Error = "只能写自己的 exp-" + agent
-		return res
-	}
+	scope, res.Scope = norm, norm
 
 	var oldID int
 	var oldContent string
-	err := s.db.QueryRow(`SELECT id,content FROM memories WHERE scope=? AND key=?`, scope, key).
+	err = s.db.QueryRow(`SELECT id,content FROM memories WHERE scope=? AND key=?`, scope, key).
 		Scan(&oldID, &oldContent)
 	exists := err == nil
 

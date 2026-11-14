@@ -7,8 +7,24 @@
 ### 计划中
 - `mem_search` 可选向量后端（保留现有接口，不改调用方）
 - 记忆合并：把两条相近的合成一条并留痕
-- 按 scope 的细粒度授权 + 写入审批流
 - `agent rm` 命令
+- 看板其余只读接口（overview/memories/...）统一加令牌校验
+
+## [0.1.1] - 2026-11-14
+
+### 新增
+- **图谱写口**：MCP `entity_put` / `link_put`，REST `POST /api/entities`、`POST /api/links`，
+  `GET /api/entities?scope=&q=`、`GET /api/links?entity=`（此前只有 `graph` 读）
+- **令牌模型统一为 `name + scopes`**：`agents.scopes` 列 + `agent add --scopes`，
+  `agent list` 显示 scopes；能力 `mem:*` / `graph:*` / `map:write` / `admin`，支持 `<资源>:*` 通配
+- `docs/TOKEN_MODEL.md`：与 keybaton、旧 Python 版共用的口径（能力 scope × 数据 scope）
+
+### 变更
+- **读公开、写鉴权（定稿口径）**：`GET /api/graph` 与看板只读接口免令牌（看板 JS 直连），
+  写接口（`entity_put` / `link_put`、`POST /api/entities|links`、`mem_put`、项目/任务/过程）必须令牌 + 能力 scope + 数据 scope。
+  代价：图谱公开——README 标明「只读公开、勿放敏感实体」
+- 写记忆/项目/任务/过程、读记忆/图谱都先过能力校验，越权尝试写审计 `tool_denied`
+- 实体与关系各增 `scope` 列（老库自动 `ALTER TABLE` 补列，默认 `shared`）
 
 ## [0.1.0] - 2026-11-14
 

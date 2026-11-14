@@ -72,10 +72,14 @@ open http://127.0.0.1:8861/
 ## 给 agent 接入
 
 ```bash
-# 每台机器一个令牌，角色分 writer / admin
-nxmem agent add mac --role writer
-→ agent=mac role=writer token=xxxxx
+# 每台机器一个令牌：name + scopes（能力用 scopes 表达，不再靠角色猜）
+nxmem agent add mac --scopes mem:read,mem:write,graph:read,graph:write,map:write
+→ agent=mac role=writer scopes=mem:read,mem:write,... token=xxxxx
+
+nxmem agent add brain --role admin     # admin = 全部能力 + 可写 shared
 ```
+
+令牌模型见 [TOKEN_MODEL.md](docs/TOKEN_MODEL.md)，与 keybaton、旧 Python 版统一为 `name + scopes` 一套口径。
 
 MCP 端点：`POST /mcp`，Header `X-Nxmem-Token`（也认 `X-Api-Key` 和 `Bearer`）。
 
@@ -98,11 +102,23 @@ MCP 端点：`POST /mcp`，Header `X-Nxmem-Token`（也认 `X-Api-Key` 和 `Bear
 | `project_list` / `project_upsert` | 项目与进度 |
 | `task_list` / `task_upsert` | 任务（甘特数据源） |
 | `step_log` / `step_list` | 过程记录：谁在什么时候做了什么 |
-| `whoami` | 当前身份与角色 |
+| `graph` | 读图谱（实体 + 关系），可按实体名取邻域 |
+| `entity_put` | 写实体节点（scope 校验 + 审计） |
+| `link_put` | 写关系 `src -rel-> dst`（scope 校验 + 审计） |
+| `whoami` | 当前身份、角色与 scopes |
 
 ---
 
 ## 治理规则（这是它和"又一个记忆库"的区别）
+
+**令牌 = `name + scopes`**（v0.1.1 起统一）
+
+```bash
+nxmem agent add mac --scopes graph:read,graph:write
+nxmem agent list          # NAME / ROLE / SCOPES / LAST_SEEN
+```
+
+能力：`mem:read` `mem:write` `graph:read` `graph:write` `map:write`（项目/任务/过程）`admin`（全部 + 写 shared），支持 `mem:*` 与 `*`。
 
 **scope 三档**
 
@@ -111,6 +127,17 @@ MCP 端点：`POST /mcp`，Header `X-Nxmem-Token`（也认 `X-Api-Key` 和 `Bear
 | `shared` | 只有 `admin` 角色 | 全局共识：规范、口径、决策 |
 | `<项目码>` | 任何 writer | 项目内上下文 |
 | `exp-<机器名>` | 只有该机器 | 各机器的实验性记忆，互不污染 |
+
+**读写接口的令牌口径**
+
+- **只读公开、勿放敏感实体**：`GET /api/graph` 与看板只读接口（overview/memories/projects/tasks/gantt/steps/audit）
+  免令牌，能访问 8861 的人都能看。图谱与记忆里不要写密码、客户名单、私网拓扑。
+- **写接口一律要令牌 + scope**：`POST /api/entities|links`、MCP `entity_put` / `link_put` / `mem_put` / 项目·任务·过程写入，
+  必须带 `X-Nxmem-Token`（或 `Bearer` / `X-Api-Key`）且具备对应能力（`graph:write` / `mem:write` / `map:write`），
+  再过一层数据 scope（`shared` 仅 admin）。
+- `/mcp` 整体需要令牌（工具里读写混在一起，不拆两套）。
+- 将来若要收紧读接口：看板 JS（static/index.html）同步改成带令牌请求并保留「更换令牌」入口；
+  客户端（zfg 的 `graph` 等）已支持可选 `X-Nxmem-Token`，加鉴权不会打断它们。
 
 **写入时的三道闸**
 
@@ -146,7 +173,7 @@ sqlite3 ~/.nxmem/nxmem.db ".backup '/backup/nxmem-$(date +%F).db'"
 # 容器
 docker run -d -p 127.0.0.1:8861:8861 \
   -e NXMEM_ADMIN_TOKEN=$NXMEM_ADMIN_TOKEN \
-  -v ./data:/data ghcr.io/78236650/nxmem:0.1.0
+  -v ./data:/data ghcr.io/78236650/nxmem:0.1.1
 ```
 
 细节见 [运维文档](docs/OPERATIONS.md)。
@@ -173,6 +200,7 @@ make docker
 | [使用文档](docs/USAGE.md) | 安装、命令、MCP 接入、scope 与治理细节 |
 | [设计文档](docs/DESIGN.md) | 数据模型、治理规则为什么这么定、被否掉的方案 |
 | [运维文档](docs/OPERATIONS.md) | 部署、备份、升级、令牌轮换、故障处置 |
+| [令牌模型](docs/TOKEN_MODEL.md) | `name + scopes` 统一口径：能力、数据 scope、跨项目对齐 |
 
 ---
 

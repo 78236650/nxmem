@@ -2,7 +2,7 @@ name: nxmem
 
 services:
   nxmem:
-    image: ghcr.io/78236650/nxmem:0.1.0
+    image: ghcr.io/78236650/nxmem:0.1.1
     build: .
     container_name: nxmem
     restart: unless-stopped

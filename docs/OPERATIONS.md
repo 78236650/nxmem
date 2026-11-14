@@ -60,7 +60,7 @@ journalctl -u nxmem -f
 ```yaml
 services:
   nxmem:
-    image: ghcr.io/78236650/nxmem:0.1.0
+    image: ghcr.io/78236650/nxmem:0.1.1
     restart: unless-stopped
     ports:
       - "127.0.0.1:8861:8861"

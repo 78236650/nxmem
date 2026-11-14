@@ -21,14 +21,14 @@ import (
 	"github.com/78236650/nxmem/internal/store"
 )
 
-const version = "0.1.0"
+const version = "0.1.1"
 
 const usage = `nxmem —— 共享记忆与项目进度（只做记忆，不做凭据）
 
 用法:
   nxmem serve [--addr 127.0.0.1:8861] [--dir ~/.nxmem]   起服务（看板 + REST + MCP）
-  nxmem agent add <name> [--role writer|admin]            发令牌（admin 可写 shared）
-  nxmem agent list                                        列出 agent
+  nxmem agent add <name> [--role writer|admin] [--scopes a,b]  发令牌（能力用 scopes 表达）
+  nxmem agent list                                        列出 agent（name / role / scopes）
   nxmem import <export.json>                              导入旧版导出
   nxmem import-graph <old.db>                             导入旧版图谱（entities/links）
   nxmem backup <dst.db>                                   一致性快照备份（VACUUM INTO）
@@ -103,7 +103,7 @@ func cmdServe(args []string) error {
 	defer s.Close()
 
 	if *admin != "" {
-		if err := s.EnsureAgent("admin", *admin, "admin"); err != nil {
+		if err := s.EnsureAgent("admin", *admin, "admin", store.CapAdmin); err != nil {
 			return err
 		}
 	}
@@ -119,7 +119,7 @@ func cmdServe(args []string) error {
 	if *admin == "" {
 		fmt.Println("提示: 未设 --admin-token，所有写 shared 的请求都会被拒")
 	}
-	fmt.Printf("nxmem %s 监听 http://%s\n  看板: GET /\n  REST: GET /api/{overview,memories,gantt,steps,graph,audit}\n  MCP : POST /mcp （Header X-Nxmem-Token）\n", version, *addr)
+	fmt.Printf("nxmem %s 监听 http://%s\n  看板: GET /\n  REST: GET /api/{overview,memories,gantt,steps,audit,graph} 只读公开 · /api/entities|links 与全部 POST 需令牌\n  MCP : POST /mcp （Header X-Nxmem-Token）\n", version, *addr)
 	h := api.New(api.Options{Addr: *addr, AdminToken: *admin, Store: s, StaticDir: staticDir})
 	srv := &http.Server{Addr: *addr, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 	return srv.ListenAndServe()
@@ -137,7 +137,7 @@ func cmdAgent(args []string) error {
 	switch args[0] {
 	case "add":
 		// 注意：flag.Parse 遇到第一个非 flag 参数就停止，所以参数要自己拆。
-		name, role := "", "writer"
+		name, role, scopesCSV := "", "writer", ""
 		rest := args[1:]
 		for i := 0; i < len(rest); i++ {
 			a := rest[i]
@@ -146,6 +146,17 @@ func cmdAgent(args []string) error {
 					role = rest[i+1]
 					i++
 				}
+				continue
+			}
+			if a == "--scopes" || a == "-scopes" {
+				if i+1 < len(rest) {
+					scopesCSV = rest[i+1]
+					i++
+				}
+				continue
+			}
+			if strings.HasPrefix(a, "--scopes=") || strings.HasPrefix(a, "-scopes=") {
+				scopesCSV = a[strings.Index(a, "=")+1:]
 				continue
 			}
 			if strings.HasPrefix(a, "--role=") || strings.HasPrefix(a, "-role=") {
@@ -162,21 +173,26 @@ func cmdAgent(args []string) error {
 		if role != "admin" {
 			role = "writer"
 		}
+		sp := store.ParseScopes(scopesCSV)
+		if len(sp) == 0 {
+			sp = store.DefaultScopes(role)
+		}
 		tok := store.RandomToken(24)
-		if err := s.EnsureAgent(name, tok, role); err != nil {
+		if err := s.EnsureAgent(name, tok, role, sp...); err != nil {
 			return err
 		}
-		s.Audit("cli", "agent_add", name, true, role)
-		fmt.Printf("agent=%s role=%s token=%s\n（令牌只显示这一次，丢了就重新 add 覆盖）\n", name, role, tok)
+		s.Audit("cli", "agent_add", name, true, "role="+role+";scopes="+store.JoinScopes(sp))
+		fmt.Printf("agent=%s role=%s scopes=%s token=%s\n（令牌只显示这一次，丢了就重新 add 覆盖）\n",
+			name, role, store.JoinScopes(sp), tok)
 		return nil
 	case "list":
 		rows, err := s.Agents()
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%-16s %-8s %s\n", "NAME", "ROLE", "LAST_SEEN")
+		fmt.Printf("%-16s %-8s %-42s %s\n", "NAME", "ROLE", "SCOPES", "LAST_SEEN")
 		for _, a := range rows {
-			fmt.Printf("%-16s %-8s %s\n", a[0], a[1], a[2])
+			fmt.Printf("%-16s %-8s %-42s %s\n", a[0], a[1], a[2], a[3])
 		}
 		return nil
 	}
