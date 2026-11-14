@@ -42,6 +42,7 @@ const usage = `nxmem —— 共享记忆与项目进度（只做记忆，不做�
 `
 
 func main() {
+	api.Version = version
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(1)

@@ -15,7 +15,7 @@ import (
 	"github.com/78236650/nxmem/internal/store"
 )
 
-const Version = "0.1.1"
+var Version = "0.1.2"   // 由 main 在启动时覆盖，保证 /healthz 与二进制一致
 
 var cstZone = time.FixedZone("CST", 8*3600)
 
